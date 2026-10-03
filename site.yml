@@ -1,0 +1,62 @@
+---
+# cyberdeck — turn a flashed card with SSH open into a usable homelab terminal.
+#
+# Increment 1 (working): base + tooling + dotfiles. Later increments are
+# scaffolded under roles/ and wired in here as they land — see the commented
+# roadmap below. Profile-driven; nothing hardcodes a device.
+#
+#   cp config.example.yml config.yml           && $EDITOR config.yml
+#   cp inventory/hosts.example.ini inventory/hosts.ini && $EDITOR inventory/hosts.ini
+#   ansible-galaxy collection install -r requirements.yml
+#   ansible-playbook site.yml
+
+- name: Provision cyberdeck device
+  hosts: cyberdeck
+  become: true
+  vars_files:
+    - config.yml                      # copied from config.example.yml; gitignored
+
+  # Map the human-friendly nested config onto the flat variables the roles use.
+  # Keeps config.yml readable and roles simple (no deep-merge surprises).
+  vars:
+    device_user: "{{ device.user }}"
+    timezone: "{{ device.timezone }}"
+    locale: "{{ device.locale }}"
+    cyberdeck_profile: "{{ device.profile }}"
+    device_authorized_keys: "{{ ssh.authorized_keys | default([]) }}"
+    dotfiles_public_repo: "{{ dotfiles.public_repo | default('') }}"
+
+  pre_tasks:
+    - name: Load the active device profile
+      ansible.builtin.include_vars:
+        file: "profiles/{{ cyberdeck_profile }}.yml"
+        name: profile
+      tags: [always]
+
+    - name: Announce which profile/board is being provisioned
+      ansible.builtin.debug:
+        msg: >-
+          Profile {{ cyberdeck_profile }} -> board {{ profile.board }},
+          screen {{ profile.screen.width }}x{{ profile.screen.height }},
+          RAM ceiling {{ profile.ram_mb }} MB
+      tags: [always]
+
+  roles:
+    - base
+    - tooling
+    - dotfiles
+    # --- Planned roles (scaffolds under roles/, wired in as each lands) -------
+    # - wifi          # prioritised network profiles from the wifi list
+    # - workstation   # uv python toolchain (several versions) + apt/pip lists
+    # - identity      # authorized_keys + on-device keygen (pubkey report)
+    # - repos         # clone the repos list
+    # - creds         # personal-tier env file (0600); lab tier absent by design
+
+  post_tasks:
+    # Acceptance (f): record memory headroom — the budget every later increment
+    # spends from. Capture this number after the first real run.
+    - name: Report memory headroom after provisioning
+      ansible.builtin.debug:
+        msg: >-
+          Memory after provisioning: {{ ansible_memtotal_mb }} MB total,
+          {{ ansible_memfree_mb }} MB free. Record this (acceptance f).

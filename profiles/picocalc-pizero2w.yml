@@ -1,0 +1,30 @@
+---
+# Profile #1 — a PicoCalc shell with a Raspberry Pi Zero 2 W (a Linux SBC) inside.
+#
+# A profile is DATA, not code. Roles read these fields; nothing hardcodes a
+# device. Add another handheld (different panel, different board in the same
+# shell, something else entirely) by adding a new profiles/<name>.yml — never by
+# branching a role. Screen geometry is the load-bearing field: tmux layout, pager
+# width, editor defaults and every later-increment renderer derive from it. The
+# moment a role hardcodes 320, this stops being a general project.
+
+board: pi-zero-2w            # Linux SBC; confirm with /proc/device-tree/model + uname -m
+arch: aarch64                # 64-bit ARM (Cortex-A53). Pending on-device confirmation.
+ram_mb: 512                  # shared with the framebuffer — the binding constraint (SPEC §6)
+
+screen:
+  width: 320
+  height: 320
+  dpi: ~                     # unknown / not yet measured
+
+input: picocalc-i2c-keyboard # STM32-backed keyboard over I2C
+
+# Driver stack — consumed by the hardware role in increment 2, listed now so the
+# profile is complete from day one.
+drivers:
+  - mipi-dbi-spi-panel
+  - picocalc-keyboard
+
+quirks:
+  - no-hardware-cursor
+  - pwm-audio

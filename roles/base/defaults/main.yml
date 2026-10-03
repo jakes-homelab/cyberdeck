@@ -1,0 +1,12 @@
+---
+# Fallback defaults. The play maps config.yml's nested `device`/`ssh` sections
+# onto these flat variables.
+device_user: deck
+timezone: "Etc/UTC"
+locale: "en_US.UTF-8"
+device_authorized_keys: []
+
+base_packages:
+  - ca-certificates
+  - curl
+  - less

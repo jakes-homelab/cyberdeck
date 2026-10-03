@@ -1,0 +1,10 @@
+---
+# wifi — SCAFFOLD (planned role, not implemented yet).
+#
+# Will turn the `wifi` list from config into prioritised NetworkManager /
+# wpa_supplicant profiles so a freshly-flashed deck reconnects to known networks
+# unattended — the single biggest restore-pain item. Secret-bearing (PSKs):
+# injected at provision time, never committed (docs/secrets-posture.md).
+- name: wifi scaffold (planned — not implemented)
+  ansible.builtin.debug:
+    msg: "Would configure {{ wifi | default([]) | length }} WiFi network(s). Not yet implemented — sequencing set by the SPEC amendment."

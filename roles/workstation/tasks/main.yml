@@ -1,0 +1,16 @@
+---
+# workstation — SCAFFOLD (planned role, not implemented yet).
+#
+# Will install the uv toolchain and the Python versions in `python.versions`
+# (installed once, the last is the default), exposing them on PATH as python3.X
+# AND installing python3-venv/python3-pip — so BOTH a `uv venv` and the classic
+# `python3.X -m venv .venv && source .venv/bin/activate` flow work, whichever a
+# project calls for. Then the `packages.apt` apps and the `packages.pip` packages
+# (into a uv-managed venv, never system pip). Zero secrets. Proves the fat install
+# fits the 512 MB RUNTIME budget (install size is disk, cheap on a 16 GB+ card).
+- name: workstation scaffold (planned — not implemented)
+  ansible.builtin.debug:
+    msg: >-
+      Would install uv + Python {{ python.versions | default([]) | join(', ') }},
+      {{ packages.apt | default([]) | length }} apt + {{ packages.pip | default([]) | length }}
+      pip package(s). Not yet implemented — sequencing set by the SPEC amendment.

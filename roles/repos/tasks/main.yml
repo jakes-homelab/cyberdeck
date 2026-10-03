@@ -1,0 +1,9 @@
+---
+# repos — SCAFFOLD (planned role, not implemented yet).
+#
+# Will clone the `repos` list onto the device (url, dest, optional branch).
+# Private repos depend on the identity role's on-device key being registered
+# first, so this runs after `identity`.
+- name: repos scaffold (planned — not implemented)
+  ansible.builtin.debug:
+    msg: "Would clone {{ repos | default([]) | length }} repo(s). Not yet implemented — sequencing set by the SPEC amendment."

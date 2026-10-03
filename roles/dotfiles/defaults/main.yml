@@ -1,0 +1,13 @@
+---
+device_user: deck
+
+# HTTPS URL of the PUBLIC dotfiles repo. Empty => this role no-ops (the device
+# still has a working shell from the tooling role). See README "Status": this
+# role is unproven until that public repo exists.
+dotfiles_public_repo: ""
+
+# Where the repo is cloned, and which stow packages to link into $HOME.
+dotfiles_clone_dir: "dotfiles-public"   # relative to the device user's home
+dotfiles_stow_packages:
+  - zsh
+  - tmux

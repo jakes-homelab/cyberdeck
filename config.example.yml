@@ -1,0 +1,77 @@
+# cyberdeck — environment inputs. Copy to config.yml and fill in.
+#
+#   cp config.example.yml config.yml && $EDITOR config.yml
+#
+# config.yml is gitignored and NEVER committed. Nothing environment-specific
+# belongs in this committed example — real values live only in your config.yml.
+#
+# SECRETS: real WiFi PSKs and personal tokens go ONLY in your gitignored
+# config.yml. They are injected onto the device at provision time and never enter
+# the repo (no secret in tracked files or history — see docs/secrets-posture.md).
+# If you want config.yml encrypted at rest on your own machine, use your personal
+# vault (age / pass / SOPS) — the project itself stays agnostic and depends on none.
+#
+# Each section is tagged with the increment that consumes it. Sections for later
+# increments are here so the shape is grounded now; fill what applies to you.
+
+# --- Device identity (I1) ------------------------------------------------------
+device:
+  user: deck
+  timezone: "Etc/UTC"
+  locale: "en_US.UTF-8"
+  profile: picocalc-pizero2w        # names profiles/<profile>.yml
+
+# --- WiFi networks (I2) --------------------------------------------------------
+# A LIST, so a freshly-flashed deck reconnects to your known networks unattended.
+# Higher priority wins when several are in range. PSKs are secrets.
+wifi:
+  - { ssid: "YOUR_HOME_WIFI",     psk: "changeme", priority: 100 }
+  - { ssid: "YOUR_PHONE_HOTSPOT", psk: "changeme", priority: 50 }
+
+# --- SSH (I1 authorized_keys / I4 device identities) ---------------------------
+ssh:
+  # PUBLIC keys allowed to log IN to the deck. Not secret.
+  authorized_keys:
+    - "ssh-ed25519 AAAA...your-laptop-key... you@example"
+  # Key pairs GENERATED on the device at provision time. The private key never
+  # leaves the deck and never passes through config or the repo. The role prints
+  # each public key; register it with GitHub/Gitea as a revocable device identity.
+  generate_keys:
+    - { name: github, type: ed25519 }
+    - { name: gitea,  type: ed25519 }
+
+# --- Python toolchain (I3) -----------------------------------------------------
+# Install several versions ONCE so you are not rebuilding the common ones on every
+# restore; the LAST entry is the default. (Disk is cheap on a 16 GB+ card — the
+# 512 MB ceiling is a RUNTIME budget, not an install-size one.)
+#
+# BOTH workflows work out of the box — use whichever a project wants:
+#   uv-managed:  uv venv  /  uv run
+#   classic:     python3.10 -m venv .venv && source .venv/bin/activate
+# uv installs the versions and exposes them on PATH as python3.8 / python3.10 /…,
+# and `python3-venv` / `python3-pip` cover the system interpreter too.
+python:
+  enable: true
+  versions: ["3.8", "3.10", "3.13"]
+
+# --- Packages (I3) -------------------------------------------------------------
+packages:
+  apt: []        # extra apt apps preinstalled
+  pip: []        # installed into a uv-managed venv, never system pip
+
+# --- Repos to clone (I4) -------------------------------------------------------
+repos:
+  - { url: "https://github.com/you/your-repo.git", dest: "~/src/your-repo", branch: main }
+
+# --- Credentials (I5) — PERSONAL TIER ONLY -------------------------------------
+# Written to ~/.config/cyberdeck/env (0600) and sourced by the shell. These are
+# YOUR revocable creds, not the lab's. Lab tokens (gitea/homelab) are deliberately
+# NOT here: a device that leaves the house must not carry lab access
+# (SPEC §8.2 roaming-device rule; docs/secrets-posture.md).
+creds:
+  github_token: ""
+  claude_api_key: ""
+
+# --- dotfiles (I1) -------------------------------------------------------------
+dotfiles:
+  public_repo: ""                   # HTTPS URL of the PUBLIC dotfiles repo; empty => skip

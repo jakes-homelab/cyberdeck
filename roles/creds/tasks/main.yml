@@ -1,0 +1,11 @@
+---
+# creds — SCAFFOLD (planned role, not implemented yet).
+#
+# Will write the PERSONAL-TIER creds from `creds` into ~/.config/cyberdeck/env
+# (mode 0600), sourced by the shell via the dotfiles zsh hook. Only your own
+# revocable creds (e.g. a fine-grained GitHub PAT, a spend-capped Claude key)
+# belong here. The LAB tier (gitea/homelab tokens) is deliberately absent: a
+# device that leaves the house must not carry lab access (docs/secrets-posture.md).
+- name: creds scaffold (planned — not implemented)
+  ansible.builtin.debug:
+    msg: "Would write a 0600 personal-tier env file. Lab creds intentionally excluded. Not yet implemented — sequencing set by the SPEC amendment."

@@ -1,0 +1,95 @@
+---
+# base — locale, timezone, a minimal package set, and SSH hardening. Fully
+# profile-agnostic in behaviour; it reads the profile only to record what this
+# device IS (see the marker file at the end), which is acceptance (e).
+
+# Fail BEFORE we harden SSH if there is no key to log in with — disabling
+# password auth without a working key is how you lock yourself out of a handheld.
+- name: Assert at least one SSH public key was supplied
+  ansible.builtin.assert:
+    that:
+      - device_authorized_keys | length > 0
+    fail_msg: >-
+      ssh.authorized_keys is empty in config.yml. Add at least one public key
+      before provisioning — base hardening disables password auth.
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Ensure the locale is generated
+  community.general.locale_gen:
+    name: "{{ locale }}"
+    state: present
+
+- name: Set the system default locale
+  ansible.builtin.copy:
+    dest: /etc/default/locale
+    content: "LANG={{ locale }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the minimal base package set
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+
+# --- SSH hardening ------------------------------------------------------------
+- name: Authorize the device user's login SSH keys
+  ansible.posix.authorized_key:
+    user: "{{ device_user }}"
+    key: "{{ item }}"
+    state: present
+    exclusive: false
+  loop: "{{ device_authorized_keys }}"
+
+# A drop-in wins over the main sshd_config: Debian's Include line is near the top
+# and sshd honours the first value it sees for each keyword.
+- name: Harden SSH — key-only auth, no root login
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-cyberdeck-hardening.conf
+    content: |
+      # Managed by cyberdeck (base role). SSH is key-only.
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart SSH
+
+- name: Validate the effective sshd config (fail before any restart if broken)
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false
+
+# --- Profile marker (acceptance e: a role reads the profile) ------------------
+# Record what this device was provisioned as. Useful for operator debugging and
+# read back by later increments that size themselves to the screen. This is a
+# genuine consumption of profile data, not decoration.
+- name: Ensure the cyberdeck state dir exists
+  ansible.builtin.file:
+    path: /etc/cyberdeck
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Record the active profile on the device
+  ansible.builtin.copy:
+    dest: /etc/cyberdeck/profile.env
+    content: |
+      # Managed by cyberdeck (base role). The device's provisioned identity.
+      CYBERDECK_PROFILE={{ cyberdeck_profile }}
+      CYBERDECK_BOARD={{ profile.board }}
+      CYBERDECK_SCREEN_WIDTH={{ profile.screen.width }}
+      CYBERDECK_SCREEN_HEIGHT={{ profile.screen.height }}
+      CYBERDECK_RAM_MB={{ profile.ram_mb }}
+    owner: root
+    group: root
+    mode: "0644"

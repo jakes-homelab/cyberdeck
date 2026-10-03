@@ -1,0 +1,45 @@
+---
+# dotfiles — clone the PUBLIC dotfiles repo and stow shell + tmux config into the
+# device user's home. The config is canonical in that repo (SPEC-dotfiles-public),
+# cloned over the internet; this role never reaches a private/lab host.
+#
+# GATED: no-ops when dotfiles_public_repo is unset. The role is written against
+# SPEC-dotfiles-public but is UNPROVEN until that public repo exists — do not
+# treat acceptance (a) as fully met on the strength of this role alone.
+
+- name: Skip dotfiles (no public repo configured)
+  ansible.builtin.debug:
+    msg: >-
+      dotfiles_public_repo is empty — skipping. The device still has a working
+      shell from the tooling role. Set the URL in config.yml to enable.
+  when: dotfiles_public_repo | length == 0
+
+- name: Resolve the device user's home directory (on the device, not the control node)
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ device_user }}"
+  when: dotfiles_public_repo | length > 0
+
+- name: Configure dotfiles
+  when: dotfiles_public_repo | length > 0
+  become: true
+  become_user: "{{ device_user }}"
+  vars:
+    _home: "{{ getent_passwd[device_user][4] }}"   # passwd field 5 = home dir
+  block:
+    - name: Clone (or update) the public dotfiles repo
+      ansible.builtin.git:
+        repo: "{{ dotfiles_public_repo }}"
+        dest: "{{ _home }}/{{ dotfiles_clone_dir }}"
+        version: HEAD
+        update: true
+
+    - name: Stow the public dotfiles packages into $HOME
+      ansible.builtin.command:
+        cmd: "stow --restow --target={{ _home }} {{ item }}"
+        chdir: "{{ _home }}/{{ dotfiles_clone_dir }}"
+      loop: "{{ dotfiles_stow_packages }}"
+      register: _stow
+      # stow prints LINK/UNLINK lines to stderr only when it changes something;
+      # silent stderr means already-linked.
+      changed_when: _stow.stderr | length > 0

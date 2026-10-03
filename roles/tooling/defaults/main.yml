@@ -1,0 +1,14 @@
+---
+device_user: deck
+
+# The opinionated light CLI set. Deliberately short — every package added is
+# weighed against the profile's RAM ceiling. stow is here because the dotfiles
+# role needs it; zsh/tmux/git are the terminal itself.
+tooling_packages:
+  - zsh
+  - tmux
+  - git
+  - stow
+
+# Extra packages from config.yml, appended to the above. Default none.
+tooling_extra_packages: []

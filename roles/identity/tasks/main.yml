@@ -1,0 +1,12 @@
+---
+# identity — SCAFFOLD (planned role, not implemented yet).
+#
+# Will generate the key pairs named in `ssh.generate_keys` ON the device
+# (private key never leaves the deck, never touches config or repo) and print
+# each public key for registration with GitHub/Gitea as a revocable device
+# identity. This is the doctrine-compatible path to git hosting: the deck acts as
+# itself with a scoped, revocable key — it does NOT carry a lab token
+# (docs/secrets-posture.md).
+- name: identity scaffold (planned — not implemented)
+  ansible.builtin.debug:
+    msg: "Would generate {{ ssh.generate_keys | default([]) | length }} on-device key(s) and report pubkeys. Not yet implemented — sequencing set by the SPEC amendment."

@@ -1,0 +1,19 @@
+# Real environment config — only the .example is tracked.
+/config.yml
+
+# Real inventory — only the .example is tracked.
+/inventory/hosts.ini
+
+# Real first-boot script (carries WiFi + SSH material) — only the .example is tracked.
+/boot/firstrun.sh
+
+# Local override files, if any.
+*.local
+
+# Ansible noise.
+*.retry
+__pycache__/
+*.pyc
+
+# OS noise.
+.DS_Store
