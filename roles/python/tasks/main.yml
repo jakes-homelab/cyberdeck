@@ -1,0 +1,111 @@
+---
+# python — the Python toolchain: uv, the requested versions (uv-managed, installed
+# once), and the DEFAULT env (~/.venvs/base, a uv venv on the default version, put
+# on PATH for login shells) holding python.pip. Sections' own `pip:` lists install
+# into the same env later. Skipped when python.versions is empty.
+#
+# Both workflows work afterwards:
+#   uv-managed:  uv venv --python 3.10 .venv && source .venv/bin/activate   (or uv run)
+#   classic:     python3 -m venv .venv && source .venv/bin/activate
+
+- name: Skip the Python toolchain (python.versions is empty)
+  ansible.builtin.debug:
+    msg: "python.versions is empty — skipping uv + Python versions."
+  when: python_versions | length == 0
+
+- name: Python toolchain
+  when: python_versions | length > 0
+  vars:
+    _home: "/home/{{ device_user }}"
+    _uv: "/home/{{ device_user }}/.local/bin/uv"
+    _venv: "/home/{{ device_user }}/{{ python_venv }}"
+  block:
+    - name: Check python.default is one of python.versions
+      ansible.builtin.assert:
+        that: python_default in python_versions
+        fail_msg: >-
+          python.default ({{ python_default }}) must be one of python.versions
+          ({{ python_versions | join(', ') }}).
+
+    - name: Install the toolchain's system packages
+      ansible.builtin.apt:
+        name: "{{ python_base_apt }}"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # uv + the Python versions live in the device user's home (~/.local).
+    - name: Check whether uv is installed
+      ansible.builtin.stat:
+        path: "{{ _uv }}"
+      register: _uv_bin
+
+    - name: Install uv via pipx
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command: pipx install uv
+      when: not _uv_bin.stat.exists
+      changed_when: true
+
+    - name: Ensure ~/.local/bin is on PATH (pipx ensurepath)
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command: pipx ensurepath
+      register: _ensurepath
+      changed_when: "'added' in (_ensurepath.stdout | lower)"
+
+    - name: Install the requested Python versions (uv)
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command: "{{ _uv }} python install {{ python_versions | join(' ') }}"
+      register: _uv_py
+      changed_when: "'Installed' in (_uv_py.stdout + _uv_py.stderr)"
+
+    # The default env follows python.default: if it was built on another version
+    # (you changed the default), rebuild it — its libs are reinstalled below.
+    - name: Read the default env's Python version
+      ansible.builtin.shell:
+        cmd: "sed -n 's/^version_info *= *//p; s/^version *= *//p' {{ _venv }}/pyvenv.cfg 2>/dev/null | head -1"
+      register: _venv_ver
+      changed_when: false
+
+    - name: Rebuild the default env (python.default changed)
+      ansible.builtin.file:
+        path: "{{ _venv }}"
+        state: absent
+      when:
+        - _venv_ver.stdout | length > 0
+        - not (_venv_ver.stdout is match('^' ~ (python_default | regex_escape) ~ '(\.|$)'))
+
+    - name: Create the default Python env (python.default)
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command:
+        cmd: "{{ _uv }} venv --python {{ python_default }} {{ _venv }}"
+        creates: "{{ _venv }}"
+
+    - name: Install python.pip into the default env
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command:
+        cmd: "{{ _uv }} pip install --python {{ _venv }}/bin/python {{ python_pip | join(' ') }}"
+      register: _uv_pip
+      changed_when: "'Installed' in (_uv_pip.stdout + _uv_pip.stderr)"
+      when: python_pip | length > 0
+
+    # Make the default env the one you get in a login shell (bash + zsh) without
+    # activating anything — project venvs still override when activated.
+    - name: Put the default Python env on PATH for login shells
+      ansible.builtin.copy:
+        dest: /etc/profile.d/20-cyberdeck-python.sh
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by cyberdeck (python). Default Python env on PATH.
+          if [ -d "$HOME/{{ python_venv }}/bin" ]; then
+            case ":$PATH:" in
+              *":$HOME/{{ python_venv }}/bin:"*) ;;
+              *) PATH="$HOME/{{ python_venv }}/bin:$PATH" ;;
+            esac
+          fi

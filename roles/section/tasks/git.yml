@@ -1,0 +1,50 @@
+---
+# git entries — clone `repo` (at `version`: branch / tag / commit SHA), then run
+# the entry's `install` commands: in order, stopping at the first failure (like
+# &&), in a bash LOGIN shell as you, inside the clone. Install re-runs only when
+# the checked-out commit or the commands change (marker per entry).
+- name: "[{{ section_name }}] git: clone + install"
+  become: true
+  become_user: "{{ device_user }}"
+  vars:
+    _home: "/home/{{ device_user }}"
+    _state: "/home/{{ device_user }}/.local/state/cyberdeck/installed"
+    _nl: "\n"   # a real newline, to join install commands into one script
+  block:
+    - name: "[{{ section_name }}] git: check each entry (name + repo)"
+      ansible.builtin.assert:
+        that:
+          - item.name is defined
+          - item.repo is defined
+        fail_msg: "git entries need `name` and `repo` (the repo to clone). See docs/software.md."
+      loop: "{{ _sec_git }}"
+      loop_control:
+        label: "{{ item.name | default(item.repo) | default('?') }}"
+
+    - name: "[{{ section_name }}] git: clone (or update)"
+      ansible.builtin.git:
+        repo: "{{ item.repo }}"
+        dest: "{{ (item.dest | default('~/src/' ~ item.name)) | regex_replace('^~', _home) }}"
+        version: "{{ item.version | default('HEAD') }}"
+        update: true
+      loop: "{{ _sec_git }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: "[{{ section_name }}] git: install (in order, stop at first failure)"
+      ansible.builtin.shell:
+        executable: /bin/bash
+        chdir: "{{ (item.dest | default('~/src/' ~ item.name)) | regex_replace('^~', _home) }}"
+        cmd: |
+          set -e
+          key="$(git rev-parse HEAD) {{ item.install | to_json | hash('sha1') }}"
+          marker="{{ _state }}/git-{{ item.name }}"
+          if [ -f "$marker" ] && [ "$(cat "$marker")" = "$key" ]; then exit 0; fi
+          bash -lc {{ (['set -ex'] + item.install) | join(_nl) | quote }}   # -x: a failure shows each command run
+          mkdir -p "{{ _state }}" && printf '%s' "$key" > "$marker"
+          echo __CYBERDECK_INSTALLED__
+      loop: "{{ _sec_git | selectattr('install', 'defined') | selectattr('install') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: _git_install
+      changed_when: "'__CYBERDECK_INSTALLED__' in _git_install.stdout"

@@ -8,8 +8,9 @@ geometry, board and driver stack are data, so a new handheld is a new file, not 
 rewrite.
 
 > **Status.** All planned provisioning roles are implemented — hardware init,
-> base/SSH, WiFi, tooling, console fonts, Python/uv, identity, git + downloads, catalogue,
-> creds, comms, Tailscale, and dotfiles (proven on hardware). Small-screen config is
+> base/SSH, WiFi, tooling, console fonts, lock, the `just` menu, Python/uv, identity, creds,
+> comms, Tailscale, catalogue — plus your own **sections** (apt / pip / git / downloads), which
+> is also how dotfiles are installed (proven on hardware). Small-screen config is
 > console-only and lives in the public dotfiles (prompt + tmux status adapt to
 > terminal width), so the deck needs no extra role for it. Layer-3
 > companion services are still ahead — see the Roadmap.
@@ -150,13 +151,12 @@ ssh:
     - { name: cyberdeck, private: "~/.config/cyberdeck/keys/id_ed25519", public: "~/.config/cyberdeck/keys/id_ed25519.pub" }
 ```
 
-**The rest, briefly:** `device` (host / user / ssh_private_key / timezone / locale / profile) · `python` +
-`packages` (Python toolchain, apt/pip lists) · `git` + `downloads` (repos to clone / pinned files to fetch, each with ordered
-`install` commands — see [docs/software.md](docs/software.md)) · `creds` (your dev-identity tokens) · `comms` (public BBS / Usenet
+**The rest, briefly:** `device` (host / user / ssh_private_key / timezone / locale / profile) ·
+`python` (versions, default, default-env libs) · `sections` (YOUR groups of software — each one an Ansible tag, using apt / pip / git / downloads; see [docs/software.md](docs/software.md)) · `creds` (your dev-identity tokens) · `comms` (public BBS / Usenet
 servers) · `lock` (idle blank / logout / tmux lock timers — defaults are
 safe, omit to keep them) · `tailscale` (auth key to reach the homelab — **leave empty to skip**,
-e.g. when you're already on your LAN) · `dotfiles` (public dotfiles repo URL —
-empty to skip).
+e.g. when you're already on your LAN).
+Your dotfiles are just a section: a `git` entry whose install runs `stow`.
 
 > **Secrets** — WiFi passwords, tokens, and private keys — live **only** in
 > `config.yml` and the files it points at. It is gitignored; never commit it. Full
@@ -165,7 +165,7 @@ empty to skip).
 ## Layout
 
 ```
-site.yml                      play: init -> base -> wifi -> tooling -> console_fonts -> lock -> workstation -> identity -> git -> downloads -> catalogue -> creds -> dotfiles -> comms -> tailscale
+site.yml                      play: init -> base -> wifi -> tooling -> console_fonts -> lock -> just -> identity -> creds -> tailscale -> python -> comms -> YOUR sections -> catalogue
 config.example.yml            environment inputs (copy to config.yml)
 scripts/gen-inventory         build inventory/hosts.ini from config.yml's device block
 inventory/hosts.example.ini   inventory shape (real one is generated, gitignored)
@@ -179,12 +179,10 @@ roles/console_fonts/          console font library + `deck-font` switcher (320x3
 roles/lock/                   console blank + idle logout + tmux vlock (an unattended deck locks)
 roles/just/                   the `just` command menu — `just` lists it; `just wifi`, `just font`, …
 roles/identity/               copy the deck's own SSH keys (outbound auth)
-roles/git/                    clone the git list + run each entry's install commands
-roles/downloads/              pinned URL + sha256 (release binaries) + install commands
+roles/section/                one of YOUR sections: apt -> pip -> git -> downloads (each with install commands)
 roles/catalogue/              record git + downloads + apt; the `deck-catalogue` listing
 roles/creds/                  personal-tier env file (0600), sourced at login
-roles/workstation/            uv + several Python versions, apt/pip lists
-roles/dotfiles/               clone public dotfiles, stow (skips without a repo URL)
+roles/python/                 uv + Python versions + the default env (~/.venvs/base) on PATH
 roles/comms/                  BBS (telnet) + Usenet (tin) + per-server launchers
 roles/tailscale/              join the tailnet (skips without an auth key)
 docs/secrets-posture.md       what secrets go where, and why
@@ -201,9 +199,8 @@ a reboot; see [docs/hardware-init.md](docs/hardware-init.md)); bare provisioning
 (`base`, `tooling`, `dotfiles`); `wifi` (prioritised NetworkManager profiles +
 static IP); `console_fonts` (console font library + the `deck-font` switcher for
 the 320×320 panel); `lock` (an unattended deck blanks, logs out bare console
-shells, and locks tmux with vlock); `workstation` (uv + several Python versions,
-apt + pip lists); `identity` (copy the deck's own SSH keys for outbound auth);
-`git` + `downloads` (clone repos / fetch pinned binaries, then your install commands); `catalogue` (a `deck-catalogue` listing of
+shells, and locks tmux with vlock); `python` (uv + several Python versions + the default env); `identity` (copy the deck's own SSH keys for outbound auth);
+**your sections** (apt / pip / git / downloads, each section an Ansible tag); `catalogue` (a `deck-catalogue` listing of
 what's installed — git, downloads, apt — with descriptions); `creds` (personal-tier env
 file); `comms` (dial public BBSes + read Usenet); `tailscale` (next hop to the
 homelab). The play also prints an

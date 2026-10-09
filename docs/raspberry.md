@@ -43,6 +43,10 @@ there, not on the deck, or they're overwritten on the next run.
 | Command | What |
 |---|---|
 | `tmux` | terminal multiplexer — split/detach; essential on one small screen |
+| `man <cmd>` | manual pages — reflow to the screen width by themselves; prefer over `--help` |
+| `<cmd> --help N` | *(dotfiles)* `--help` reflowed to fit (`N` = `\| narrow`) |
+| `tldr <cmd>` | short, example-first cheat sheets (tealdeer; fetches its pages on first use) |
+| `less` | chops long lines instead of wrapping (`LESS=-FRSX`) — pan with ←/→ |
 | `nano` / `vim` | editors |
 | `deck-font list` / `set <font>` | *(cyberdeck)* switch the console font (size vs. legibility on 320×320) |
 | `deck-catalogue` | *(cyberdeck)* what's installed — git, downloads, apt, with descriptions |

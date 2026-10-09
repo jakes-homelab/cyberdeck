@@ -8,7 +8,7 @@ Three layers, from "just works" to "fully isolated per project".
 adds it at login). Out of the box:
 
 - `python` is that env's interpreter,
-- `rich` and `textual` are importable, plus anything you put in `packages.pip`,
+- `rich` and `textual` are importable, plus anything you put in `python.pip` (or a section's `pip:`),
 - nothing to activate.
 
 It's *on PATH*, not *activated* (no `VIRTUAL_ENV` set) — so a project env cleanly
@@ -53,7 +53,7 @@ activated venv, install with `pip install X` (classic) or `uv pip install X`
 ### Auto-activate with `direnv`
 
 `direnv` activates on `cd` **in** and deactivates on `cd` **out**. The binary is
-installed by the `workstation` role; add the shell hook once (this comes via your
+installed by the `python` role; add the shell hook once (this comes via your
 dotfiles, or add it by hand for now):
 
 ```sh

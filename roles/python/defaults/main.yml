@@ -1,0 +1,14 @@
+---
+device_user: deck
+
+# Your settings (versions / default / pip) come from config.yml's `python:` block
+# via site.yml (python_versions / python_default / python_pip) — not defaulted here.
+
+# System packages the toolchain needs: python3 + the classic-venv/pip bits, pipx
+# (our doctrine-friendly way to install uv — no piped install script), direnv.
+python_base_apt:
+  - python3
+  - python3-venv
+  - python3-pip
+  - pipx
+  - direnv          # auto per-directory env activation (see docs/pyenv.md)

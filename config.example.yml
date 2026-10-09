@@ -57,63 +57,21 @@ ssh:
       private: "~/.config/cyberdeck/keys/id_ed25519"       # on the provisioning machine
       public:  "~/.config/cyberdeck/keys/id_ed25519.pub"
 
-# --- Python toolchain (I3) -----------------------------------------------------
-# Install several versions ONCE so you are not rebuilding the common ones on every
-# restore; the LAST entry is the default. (Disk is cheap on a 16 GB+ card — the
-# 512 MB ceiling is a RUNTIME budget, not an install-size one.)
-#
-# BOTH workflows work out of the box — use whichever a project wants:
-#   uv-managed:  uv venv  /  uv run
-#   classic:     python3.10 -m venv .venv && source .venv/bin/activate
-# uv installs the versions and exposes them on PATH as python3.8 / python3.10 /…,
-# and `python3-venv` / `python3-pip` cover the system interpreter too.
+# --- Python toolchain ----------------------------------------------------------
+# uv installs each version ONCE (no rebuilding the common ones on every restore).
+# `default` is the one `python` runs and the default env is built on. Disk is cheap
+# on a 16 GB+ card — the 512 MB ceiling is a RUNTIME budget, not an install-size one.
+# Both workflows work: `uv venv` / `uv run`, or classic `python3.10 -m venv .venv`.
+# Empty `versions` => no Python toolchain at all.
 python:
-  enable: true
-  versions: ["3.8", "3.10", "3.13"]
-
-# --- Packages (I3) -------------------------------------------------------------
-packages:
-  apt: []        # extra apt apps preinstalled
-  pip: []        # extra libs for the DEFAULT python env (~/.venvs/base, always on
-                 # PATH). `rich` ships by default; add your always-available libs here.
-
-# --- Software you add: git clones + pinned downloads --------------------------
-# Full guide: docs/software.md
-# Same shape for both. `install` is an ORDERED list of shell commands, run top to
-# bottom and stopping at the first failure (like joining them with &&). It runs
-# as you, in a login shell (your PATH: ~/.local/bin, uv, the default python env).
-# No build types, no guessing — write exactly what should run. Install re-runs
-# only when the commit / sha256 or the commands change.
-#   entrypoint   how you launch it (shown in `deck-catalogue`)
-#   description  shown in `deck-catalogue`
-
-# git — clone, then run `install` inside the clone.
-#   name, url    required
-#   dest         where to clone (default: ~/src/<name>)
-#   version      branch, tag, or commit SHA to pin to (default: the repo's default branch)
-git:
-  - name: py-thing
-    url: "https://github.com/you/py-thing.git"
-    version: v1.2.0                  # pin a tag (or a full commit SHA)
-    install:
-      - uv venv .venv
-      - uv pip install --python .venv/bin/python -r requirements.txt
-      - ln -sf "$PWD/run.sh" ~/.local/bin/py-thing
-    entrypoint: py-thing
-    description: "An example tool"
-
-# downloads — fetch a pinned file, verify its sha256, then run `install` with
-# $FILE = the downloaded path. Best for prebuilt release binaries: compiling
-# (e.g. Rust) on a 512 MB board is not an option. Pick the aarch64 / arm64 asset
-# for a 64-bit Pi OS (`dpkg --print-architecture`).
-downloads:
-  - name: aichat
-    url: "https://github.com/sigoden/aichat/releases/download/v0.30.0/aichat-v0.30.0-aarch64-unknown-linux-musl.tar.gz"
-    sha256: "eb1cd0948569404c5d9d01c10b32b902e11f8231073315456454dec246bdf26e"
-    install:
-      - tar -xzf "$FILE" -C ~/.local/bin aichat
-    entrypoint: aichat
-    description: "All-in-one LLM CLI — chat, REPL, shell assistant"
+  versions:
+    - "3.8"
+    - "3.10"
+    - "3.13"
+  default: "3.13"           # must be one of versions
+  pip:                      # the DEFAULT env (~/.venvs/base, always on PATH)
+    - rich                  # pretty terminal output
+    - textual               # build TUIs (same author as rich)
 
 # --- Credentials (I5) — the deck's own DEV IDENTITY (revocable) ----------------
 # Written to ~/.config/cyberdeck/env (0600) and sourced by the shell. These are
@@ -155,6 +113,58 @@ lock:
   tmux_lock_min: 15            # tmux locks with vlock — your panes keep running
   allow_autologin: false       # true keeps a console autologin (defeats the logout)
 
-# --- dotfiles (I1) -------------------------------------------------------------
+
+# --- YOUR SECTIONS: everything else you install --------------------------------
+# A section is a group you name; each name is also an Ansible tag
+# (`ansible-playbook site.yml -K --tags games`). List them here — they install in
+# this order, after the core system:
+sections:
+  - workstation
+  - dotfiles
+  - games
+
+# Every section uses the same four keys, all optional, run in this order:
+#   apt        system packages
+#   pip        libs for the default python env (needs the python block above)
+#   git        repos to clone, each with ordered `install` commands
+#   downloads  pinned files (url + sha256), each with ordered `install` commands
+# `install` runs as you in a login shell, top to bottom, stopping at the first
+# failure (like &&) — only when the commit / sha256 / commands changed.
+# Lists: one item per line so each can carry a comment; leave a key out when empty.
+# Full guide: docs/software.md
+
+workstation:
+  apt:
+    - mc                    # midnight commander
+    - fastfetch             # system info (modern neofetch)
+  downloads:
+    - name: aichat
+      url: "https://github.com/sigoden/aichat/releases/download/v0.30.0/aichat-v0.30.0-aarch64-unknown-linux-musl.tar.gz"
+      sha256: "eb1cd0948569404c5d9d01c10b32b902e11f8231073315456454dec246bdf26e"
+      install:
+        - tar -xzf "$FILE" -C ~/.local/bin aichat
+      entrypoint: aichat
+      description: "All-in-one LLM CLI — chat, REPL, shell assistant"
+
+# Your shell config: clone the PUBLIC dotfiles repo and stow its packages.
 dotfiles:
-  public_repo: ""                   # HTTPS URL of the PUBLIC dotfiles repo; empty => skip
+  apt:
+    - tealdeer              # tldr (configured by the tealdeer stow package)
+  git:
+    - name: dotfiles-public
+      repo: "https://github.com/you/dotfiles.git"
+      dest: ~/dotfiles-public
+      install:
+        - stow --restow zsh tmux bin tealdeer
+      description: "Shell config: zsh, tmux, narrow, tldr"
+
+games:
+  apt:
+    - chocolate-doom
+  git:
+    - name: doom-kit        # your own repo: WADs + config + install.sh
+      repo: "git@git.example.com:you/doom-kit.git"
+      version: v1           # branch, tag, or commit SHA
+      install:
+        - ./install.sh      # no sudo in here — system packages go in apt above
+      entrypoint: doom

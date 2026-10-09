@@ -1,28 +1,18 @@
 ---
-# downloads — fetch a pinned file (URL + sha256), then run the entry's `install`
-# commands with $FILE set to the downloaded path. For prebuilt release binaries
-# (a single static binary beats compiling on a 512 MB board). `install` runs in
-# order, stopping at the first failure, in a bash LOGIN shell as the device user.
-#
-# Idempotent: the download is skipped when the file already matches its sha256;
+# downloads entries — fetch `url`, verify `sha256`, then run `install` with
+# $FILE = the downloaded path: in order, stopping at the first failure, in a bash
+# LOGIN shell as you. The download is skipped when the file already matches;
 # install re-runs only when the sha256 or the commands change.
-
-- name: Skip downloads (none configured)
-  ansible.builtin.debug:
-    msg: "downloads is empty — nothing to fetch."
-  when: (downloads | default([])) | length == 0
-
-- name: Fetch + install downloads
-  when: (downloads | default([])) | length > 0
+- name: "[{{ section_name }}] downloads: fetch + install"
   become: true
   become_user: "{{ device_user }}"
   vars:
     _home: "/home/{{ device_user }}"
     _cache: "/home/{{ device_user }}/.cache/cyberdeck/downloads"
     _state: "/home/{{ device_user }}/.local/state/cyberdeck/installed"
-    _nl: "\n"   # a real newline, to join install commands into one script
+    _nl: "\n"
   block:
-    - name: Validate each entry (name + url + sha256 + install)
+    - name: "[{{ section_name }}] downloads: check each entry (name + url + sha256 + install)"
       ansible.builtin.assert:
         that:
           - item.name is defined
@@ -30,12 +20,12 @@
           - item.sha256 is defined
           - item.sha256 is match('^[0-9a-fA-F]{64}$')
           - item.install is defined
-        fail_msg: "downloads entries need `name`, `url`, a 64-hex `sha256`, and `install:` (a list of commands)."
-      loop: "{{ downloads }}"
+        fail_msg: "downloads entries need `name`, `url`, a 64-hex `sha256`, and `install`. See docs/software.md."
+      loop: "{{ _sec_downloads }}"
       loop_control:
         label: "{{ item.name | default(item.url) | default('?') }}"
 
-    - name: Ensure the download cache and ~/.local/bin exist
+    - name: "[{{ section_name }}] downloads: cache dir + ~/.local/bin"
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -44,17 +34,17 @@
         - "{{ _cache }}"
         - "{{ _home }}/.local/bin"
 
-    - name: Download (verified against sha256)
+    - name: "[{{ section_name }}] downloads: fetch (verified against sha256)"
       ansible.builtin.get_url:
         url: "{{ item.url }}"
         dest: "{{ _cache }}/{{ item.url | urlsplit('path') | basename }}"
         checksum: "sha256:{{ item.sha256 }}"
         mode: "0644"
-      loop: "{{ downloads }}"
+      loop: "{{ _sec_downloads }}"
       loop_control:
         label: "{{ item.name }}"
 
-    - name: Run install commands (in order, stop at first failure)
+    - name: "[{{ section_name }}] downloads: install (in order, stop at first failure)"
       ansible.builtin.shell:
         executable: /bin/bash
         chdir: "{{ _cache }}"
@@ -63,12 +53,12 @@
           key="{{ item.sha256 }} {{ item.install | to_json | hash('sha1') }}"
           marker="{{ _state }}/download-{{ item.name }}"
           if [ -f "$marker" ] && [ "$(cat "$marker")" = "$key" ]; then exit 0; fi
-          bash -lc {{ (['set -ex'] + item.install) | join(_nl) | quote }}   # -x: a failure shows each command run, ending at the one that broke
+          bash -lc {{ (['set -ex'] + item.install) | join(_nl) | quote }}   # -x: a failure shows each command run
           mkdir -p "{{ _state }}" && printf '%s' "$key" > "$marker"
           echo __CYBERDECK_INSTALLED__
       environment:
         FILE: "{{ _cache }}/{{ item.url | urlsplit('path') | basename }}"
-      loop: "{{ downloads }}"
+      loop: "{{ _sec_downloads }}"
       loop_control:
         label: "{{ item.name }}"
       register: _dl_install

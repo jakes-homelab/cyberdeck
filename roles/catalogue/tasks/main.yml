@@ -1,7 +1,7 @@
 ---
-# catalogue — record what's installed on the deck (git clones, downloads, apt extras) and
+# catalogue — record what's installed on the deck (your sections: git clones, downloads, apt) and
 # install the `deck-catalogue` command that lists it, apt-style, with descriptions.
-# Runs after git/downloads/workstation so the manifest reflects what's actually there.
+# Runs after your sections so the manifest reflects what's actually there.
 
 - name: Ensure the cyberdeck state dir exists
   ansible.builtin.file:

@@ -1,38 +1,76 @@
-# Adding software: `git` and `downloads`
+# Adding software: `python` + your sections
 
-Software beyond apt goes in `config.yml` under two lists with the same shape:
-**what to fetch** + **exactly what to run**. No build types, no guessing.
+Everything you install beyond the core system lives in `config.yml` in two kinds
+of block:
 
-| You want | Use | Example |
-|---|---|---|
-| Source code from a repo (your projects, Python tools, scripts) | `git` | a Python CLI you `uv pip install` |
-| A ready-made binary attached to a GitHub release | `downloads` | `aichat`, `glow`, `fzf` |
+- **`python:`** — the Python toolchain: which versions, which is the default, and
+  the libraries in the default env.
+- **Your sections** — groups *you* name (`workstation`, `dotfiles`, `games`, …).
+  Each section is also an Ansible tag, so `--tags games` installs just that group.
 
-Rule of thumb: **anything compiled (Rust, Go, C) → `downloads`.** Building it on a
-512 MB board (≈259 MB actually free) is not an option; the project's prebuilt
-binary is.
+## Sections
 
-## `git`
+List them in `sections:`; they install in that order, after the core system:
 
 ```yaml
-git:
-  - name: py-thing                                  # required
-    url: "https://github.com/you/py-thing.git"      # required
-    version: v1.2.0                                 # optional — see below
-    dest: ~/src/py-thing                            # optional (this is the default)
-    install:                                        # optional
-      - uv venv .venv
-      - uv pip install --python .venv/bin/python -r requirements.txt
-      - ln -sf "$PWD/run.sh" ~/.local/bin/py-thing
-    entrypoint: py-thing                            # optional — shown in deck-catalogue
-    description: "An example tool"                  # optional — shown in deck-catalogue
+sections:
+  - workstation
+  - dotfiles
+  - games
+```
+
+Every section uses the **same four keys**, all optional, always run in this order:
+
+| Key | What | Runs as |
+|---|---|---|
+| `apt` | system packages | root |
+| `pip` | libraries for the default python env (`~/.venvs/base`) | you |
+| `git` | repos to clone, each with ordered `install` commands | you |
+| `downloads` | pinned files (url + sha256), each with ordered `install` commands | you |
+
+```yaml
+games:
+  apt:
+    - chocolate-doom
+  pip:
+    - pygame              # lands in the default env, importable from `python`
+  git:
+    - name: doom-kit      # your own repo: WADs + config + install.sh
+      repo: "git@git.example.com:you/doom-kit.git"
+      version: v1
+      install:
+        - ./install.sh
+      entrypoint: doom
+      description: "chocolate-doom + my WADs and setup"
+```
+
+**Writing lists:** one item per line, so each can carry a comment. `[a, b]` is the
+same list written inline. An *empty* list has no one-per-line form — leave the key
+out (a bare `pip:` with nothing under it also counts as empty).
+
+**Section names** are yours, with two rules the play checks for you: every name in
+`sections:` must exist as a block, and a name can't clash with something the
+playbook already uses (core roles, `python`, `comms`, `extras`, `apt`, `git`, …).
+
+## `git` entries
+
+```yaml
+  git:
+    - name: py-thing                                  # required
+      repo: "https://github.com/you/py-thing.git"     # required — the repo to clone
+      version: v1.2.0                                 # optional — see below
+      dest: ~/src/py-thing                            # optional (this is the default)
+      install:                                        # optional
+        - uv venv .venv
+        - uv pip install --python .venv/bin/python -r requirements.txt
+        - ln -sf "$PWD/run.sh" ~/.local/bin/py-thing
+      entrypoint: py-thing                            # optional — shown in deck-catalogue
+      description: "An example tool"                  # optional — shown in deck-catalogue
 ```
 
 ### `version`: branch, tag, or commit
 
-One field. Git resolves the name itself — branches, tags and commits share one
-namespace, so `v1.2.0`, `main` and `7fd1a60…` all just work. What matters is
-whether it **moves**:
+One field — git resolves the name itself. What matters is whether it **moves**:
 
 | `version:` | Moves? | What a playbook run does |
 |---|---|---|
@@ -41,74 +79,101 @@ whether it **moves**:
 | a tag (`v1.2.0`) | no | nothing, until you change it |
 | a commit SHA | no | nothing, until you change it |
 
-Pin a tag or commit for anything you rely on; use a branch for your own projects
-you want kept current.
+A **GitHub release** is a tag plus files attached to it. To build it from source,
+use `git` with the tag as `version`; to use its prebuilt binary, use `downloads`.
 
-A **GitHub release** is a tag plus files attached to it. To build the release
-from source, use `git` with the tag as `version`. To use its prebuilt binary, use
-`downloads` with the attached file's URL.
+### Kits: put the logic in its own repo
 
-## `downloads`
+When something needs several steps — copy assets, write a config, make a
+launcher — keep the config entry small and put the steps in a repo with its own
+`install.sh` (a "kit"). The kit is versioned, testable on your laptop, and reusable
+on any machine. Rules for `install.sh`: **no `sudo`** (it runs as you; system
+packages go in the section's `apt`), and keep private assets (e.g. commercial WADs)
+in a **private** repo the deck reaches with a read-only deploy key.
+
+### Dotfiles are just a section
 
 ```yaml
-downloads:
-  - name: aichat                                    # required
-    url: "https://github.com/sigoden/aichat/releases/download/v0.30.0/aichat-v0.30.0-aarch64-unknown-linux-musl.tar.gz"
-    sha256: "eb1cd0948569404c5d9d01c10b32b902e11f8231073315456454dec246bdf26e"
-    install:                                        # required
-      - tar -xzf "$FILE" -C ~/.local/bin aichat
-    entrypoint: aichat
-    description: "All-in-one LLM CLI — chat, REPL, shell assistant"
+dotfiles:
+  apt:
+    - tealdeer
+  git:
+    - name: dotfiles-public
+      repo: "https://github.com/you/dotfiles.git"
+      dest: ~/dotfiles-public
+      install:
+        - stow --restow zsh tmux bin tealdeer
 ```
 
-- **`$FILE`** is the downloaded file's path. Your `install` decides what to do
-  with it (extract, move, `chmod +x`, …).
-- **`sha256`** is required. The download is verified against it, and skipped on
-  later runs when the file already matches.
-- **Pick the right asset.** On a 64-bit Pi OS (`dpkg --print-architecture` →
-  `arm64`) choose the `aarch64` / `arm64` file; `-musl` builds are fully static
-  and the safest bet.
-- **Getting the sha256:** use the checksum the release publishes if it has one;
-  otherwise download it yourself and run `sha256sum <file>` (macOS:
-  `shasum -a 256 <file>`).
-- **Upgrading** = change `url` and `sha256` together.
+## `downloads` entries
+
+```yaml
+  downloads:
+    - name: aichat                                    # required
+      url: "https://github.com/sigoden/aichat/releases/download/v0.30.0/aichat-v0.30.0-aarch64-unknown-linux-musl.tar.gz"
+      sha256: "eb1cd0948569404c5d9d01c10b32b902e11f8231073315456454dec246bdf26e"
+      install:                                        # required
+        - tar -xzf "$FILE" -C ~/.local/bin aichat
+      entrypoint: aichat
+      description: "All-in-one LLM CLI — chat, REPL, shell assistant"
+```
+
+- **`$FILE`** is the downloaded file's path; `install` decides what to do with it.
+- **`sha256`** is required; the download is verified and skipped when it already matches.
+- **Anything compiled (Rust, Go, C) → `downloads`.** Building on a 512 MB board
+  (≈259 MB free) is not an option. Pick the `aarch64` / `arm64` asset for a 64-bit
+  Pi OS (`dpkg --print-architecture` → `arm64`); `-musl` builds are fully static.
+- **Getting the sha256:** the release's published checksum, or `sha256sum <file>`
+  (macOS: `shasum -a 256 <file>`). **Upgrading** = change `url` and `sha256` together.
 
 ## How `install` runs
 
-- **In order, stopping at the first failure** — exactly like joining the lines
-  with `&&`. Later lines never run after a failed one.
-- **As you** (the device user), in a **bash login shell**, so it sees the same
-  PATH you do: `~/.local/bin`, `uv`, the default python env.
-- **Where:** in the clone dir for `git` (`$PWD` is the repo); in the download
-  cache for `downloads` (use `$FILE`).
-- **When:** only when something changed — the checked-out commit (`git`), the
-  `sha256` (`downloads`), or **the `install` lines themselves**. Otherwise it's
-  skipped. A failed install is retried on the next run.
-- `~/.local/bin` exists and is on your PATH — the natural place to put a binary
-  or a symlink to a launcher.
+- **In order, stopping at the first failure** — like joining the lines with `&&`.
+- **As you**, in a **bash login shell** — your PATH (`~/.local/bin`, `uv`, the
+  default python env).
+- **Where:** in the clone for `git` (`$PWD` is the repo); in the download cache for
+  `downloads` (use `$FILE`).
+- **When:** only when something changed — the commit (`git`), the `sha256`
+  (`downloads`), or **the `install` lines themselves**. A failed install retries next run.
+
+## `python:`
+
+```yaml
+python:
+  versions:
+    - "3.8"
+    - "3.10"
+    - "3.13"
+  default: "3.13"     # must be one of versions; `python` runs this one
+  pip:                # the default env (~/.venvs/base, always on PATH)
+    - rich
+    - textual
+```
+
+uv installs each version once. The default env is built on `default`; change
+`default` and the env is rebuilt (its libraries reinstalled). A section's `pip:`
+adds to the same env — one env, not one per section (RAM and disk are tight).
+Empty `versions` = no Python toolchain; a section with `pip:` then fails clearly.
+More: [pyenv.md](pyenv.md).
 
 ## What you see in the Ansible output
 
-One TASK per step; one line per entry inside it:
+Each section shows its steps, one line per entry:
 
 ```
-TASK [downloads : Download (verified against sha256)] ***********
-changed: [deck] => (item=aichat)
-ok: [deck] => (item=glow)
+TASK [section : [games] git: clone (or update)] ******************
+changed: [deck] => (item=doom-kit)
 
-TASK [downloads : Run install commands (in order, stop at first failure)] ***
-changed: [deck] => (item=aichat)
-ok: [deck] => (item=glow)
+TASK [section : [games] git: install (in order, stop at first failure)] ***
+changed: [deck] => (item=doom-kit)
 ```
 
-`ok` = already in place, nothing ran. `changed` = it just ran. An entry's whole
-`install` list is one line. When one fails, its error output traces each command
-as it ran, ending at the one that broke:
+`ok` = already in place; `changed` = it just ran. A failing `install` shows each
+command as it ran, ending at the one that broke:
 
 ```
-+ uv venv .venv
-+ uv pip install --python .venv/bin/python -r requirements.txt
-error: File not found: `requirements.txt`
++ ./install.sh
+cp: cannot stat 'wads/doom2.wad': No such file or directory
 ```
 
 ## Seeing what's installed
@@ -116,24 +181,26 @@ error: File not found: `requirements.txt`
 ```
 $ deck-catalogue
 GIT
-  py-thing           7fd1a60    An example tool  [py-thing]
+  doom-kit           7fd1a60    chocolate-doom + my WADs and setup  [doom]
 DOWNLOADS
   aichat             eb1cd094   All-in-one LLM CLI — chat, REPL, shell assistant  [aichat]
 APT
-  ...
+  chocolate-doom     Doom engine ...
 ```
 
-## Migrating from `repos:`
+## Migrating
 
-The old `repos:` list with `build: pip|uv|make|custom` is gone. Rename `repos:` →
-`git:` and write the steps out as `install:` lines:
+The play refuses the old shapes and points here.
 
-| Old | New `install:` |
+| Old | New |
 |---|---|
-| `build: pip` | `uv venv .venv` · `uv pip install --python .venv/bin/python -r requirements.txt` |
-| `build: uv` | `uv sync` |
-| `build: make` + `make_target: setup` | `make setup` |
-| `build: custom` + `commands: [...]` | the same commands |
+| `python: {enable, versions}` (last = default) | `python: {versions, default, pip}` |
+| `packages.apt` / `packages.pip` | a section's `apt` / `pip` (e.g. `workstation:`) — or `python.pip` for default-env libs |
+| top-level `git:` list (`url:`) | a section's `git:` (`repo:`) |
+| top-level `downloads:` list | a section's `downloads:` |
+| `dotfiles.public_repo` (+ stow list) | a `dotfiles` section: `git` entry with `install: [stow --restow …]` |
+| older still: `repos:` with `build: pip\|uv\|make\|custom` | `git` entries with explicit `install:` lines |
 
-If the old key is still in `config.yml`, the play stops with a pointer here
-rather than guessing.
+Markers carry over: an entry keeps its `name`, so it isn't reinstalled just
+because it moved into a section. For dotfiles, set `dest: ~/dotfiles-public` (the
+old clone location) and the existing links stay.

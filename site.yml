@@ -24,7 +24,19 @@
     locale: "{{ device.locale }}"
     cyberdeck_profile: "{{ device.profile }}"
     device_authorized_keys: "{{ ssh.authorized_keys | default([]) }}"
-    dotfiles_public_repo: "{{ dotfiles.public_repo | default('') }}"
+    python_versions: "{{ (python | default({})).versions | default([], true) }}"
+    python_default: "{{ (python | default({})).default | default('') }}"
+    python_pip: "{{ (python | default({})).pip | default([], true) }}"
+    python_venv: ".venvs/base"          # internal: the default env, relative to ~
+    # Tag lists for the section/catalogue tasks. Built here because Ansible splits a
+    # `tags:` string on commas BEFORE templating it — so no list literals there.
+    cyberdeck_section_tags: "{{ (sections | default([])) + ['extras', 'sections'] }}"
+    cyberdeck_catalogue_tags: "{{ (sections | default([])) + ['catalogue', 'extras', 'sections'] }}"
+    # Names the playbook already uses — a section can't be called any of these.
+    cyberdeck_reserved: [init, base, wifi, tooling, console_fonts, lock, just, identity,
+                         creds, tailscale, python, comms, catalogue, core, extras, access,
+                         sections, all, always, never, apt, pip, git, downloads, device,
+                         ssh, lock_cfg, profile]
 
   pre_tasks:
     - name: Require a supported Ansible (project is pinned to core >= 2.21)
@@ -34,6 +46,35 @@
         fail_msg: >-
           cyberdeck is pinned to ansible-core >= 2.21 (tested on 2.21 / ansible 14).
           You have {{ ansible_version.full }} — see requirements.txt.
+      tags: [always]
+
+    - name: Refuse the old config shape
+      ansible.builtin.assert:
+        that:
+          - packages is not defined
+          - repos is not defined
+          - python is not defined or python.enable is not defined
+          - dotfiles is not defined or dotfiles.public_repo is not defined
+          - git is not defined or git is mapping
+          - downloads is not defined or downloads is mapping
+        fail_msg: >-
+          config.yml uses the old shape. Now: `python:` (versions / default / pip) is its
+          own block; everything else you install lives in SECTIONS you name in
+          `sections:`, each using apt / pip / git / downloads (git entries use `repo:`).
+          Dotfiles = a section with a git entry whose install runs stow. See
+          config.example.yml and docs/software.md (Migrating).
+      tags: [always]
+
+    - name: Check your sections (listed, defined, not a reserved name)
+      ansible.builtin.assert:
+        that:
+          - sections | default([]) is sequence
+          - (sections | default([]) | intersect(cyberdeck_reserved)) | length == 0
+          - (sections | default([]) | reject('in', vars) | list) | length == 0
+        fail_msg: >-
+          `sections:` must list section names that exist in config.yml and aren't
+          reserved. Missing: {{ sections | default([]) | reject('in', vars) | list }};
+          reserved: {{ sections | default([]) | intersect(cyberdeck_reserved) }}.
       tags: [always]
 
     - name: Load the active device profile
@@ -62,10 +103,10 @@
       tags: [always]
 
   # Tags: each role is tagged with its own name plus a slice —
-  #   core    a secure, connected terminal (init … lock, just, identity, creds, dotfiles, tailscale)
-  #   extras  what you install and iterate on (workstation, git, downloads, catalogue, comms)
+  #   core    a secure, connected terminal (init … lock, just, identity, creds, tailscale)
+  #   extras  what you install: python, comms, YOUR sections, catalogue
   #   access  overlay: the revocable credentials (identity, creds, tailscale)
-  # e.g. --tags extras · --tags downloads,catalogue · --skip-tags init. See docs/tags.md.
+  # Each of your sections is a tag too (e.g. --tags games). See docs/tags.md.
   roles:
     # init runs FIRST: it brings the PicoCalc hardware up (display, keyboard,
     # audio, poweroff) and REBOOTS so the overlays load — then the system stages
@@ -78,15 +119,32 @@
     - { role: console_fonts, tags: [console_fonts, core] }      # console font library + `deck-font` switcher (320x320)
     - { role: lock,          tags: [lock, core] }               # console blank + idle logout + tmux vlock (G34)
     - { role: just,          tags: [just, core] }               # the `just` command menu (just wifi, just font, …)
-    - { role: workstation,   tags: [workstation, extras] }      # uv python toolchain (several versions) + apt/pip lists
     - { role: identity,      tags: [identity, core, access] }   # copy the user-provided ssh.identity_keys (outbound auth)
-    - { role: git,           tags: [git, extras] }              # clone the git list + run each entry's install commands
-    - { role: downloads,     tags: [downloads, extras] }        # pinned URL + sha256 (e.g. release binaries) + install commands
-    - { role: catalogue,     tags: [catalogue, extras] }        # record what's installed + the `deck-catalogue` command
     - { role: creds,         tags: [creds, core, access] }      # personal-tier env file (0600); lab tier absent by design
-    - { role: dotfiles,      tags: [dotfiles, core] }
+    - { role: tailscale,     tags: [tailscale, core, access] }  # next-hop to the homelab (before sections: kits may live there)
+    - { role: python,        tags: [python, extras] }           # uv + versions + the default env (sections' pip needs it)
     - { role: comms,         tags: [comms, extras] }            # BBS + Usenet clients + per-server launchers (public servers)
-    - { role: tailscale,     tags: [tailscale, core, access] }  # next-hop to the homelab; no-ops when auth_key is unset
+
+  # YOUR sections (config.yml `sections:`), in the order listed. Each section name
+  # is a tag; `extras` / `sections` run them all. Tags can't come from a loop, so
+  # this one task carries every section name and the `when` picks the asked-for ones.
+  tasks:
+    - name: Install your sections
+      ansible.builtin.include_role:
+        name: section
+        apply: { tags: [always] }
+      loop: "{{ sections | default([]) }}"
+      loop_control:
+        loop_var: section_name
+      when: >-
+        ansible_run_tags | intersect(['all', 'extras', 'sections', section_name]) | length > 0
+      tags: "{{ cyberdeck_section_tags }}"
+
+    - name: Record what's installed (deck-catalogue)
+      ansible.builtin.include_role:
+        name: catalogue
+        apply: { tags: [always] }
+      tags: "{{ cyberdeck_catalogue_tags }}"
 
   post_tasks:
     # Success banner: confirm the deck is reachable and leave the handy commands

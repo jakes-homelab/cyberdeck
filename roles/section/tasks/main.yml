@@ -1,0 +1,67 @@
+---
+# section — install one of YOUR sections from config.yml (named in `sections:`).
+# Every section uses the same four keys, run in this order:
+#   apt        system packages (root)
+#   pip        libs for the default python env (needs the `python` section)
+#   git        clone, then run its ordered `install` commands       (git.yml)
+#   downloads  fetch url + verify sha256, then run `install`        (downloads.yml)
+# All optional; a bare `key:` with nothing under it counts as empty.
+# Called once per section by site.yml with `section_name` set.
+
+- name: "[{{ section_name }}] Load the section"
+  ansible.builtin.set_fact:
+    _sec: "{{ lookup('vars', section_name, default={}) or {} }}"
+
+- name: "[{{ section_name }}] Check the section's shape"
+  ansible.builtin.assert:
+    that:
+      - _sec is mapping
+      - (_sec.keys() | difference(['apt', 'pip', 'git', 'downloads'])) | length == 0
+    fail_msg: >-
+      section `{{ section_name }}` may only use apt / pip / git / downloads
+      (found: {{ (_sec.keys() | list) if _sec is mapping else _sec }}). See docs/software.md.
+
+# A key left out — or written bare (`pip:` with nothing under it) — is empty.
+- name: "[{{ section_name }}] Normalise the four keys"
+  ansible.builtin.set_fact:
+    _sec_apt: "{{ _sec.apt | default([], true) }}"
+    _sec_pip: "{{ _sec.pip | default([], true) }}"
+    _sec_git: "{{ _sec.git | default([], true) }}"
+    _sec_downloads: "{{ _sec.downloads | default([], true) }}"
+
+- name: "[{{ section_name }}] apt"
+  ansible.builtin.apt:
+    name: "{{ _sec_apt }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: _sec_apt | length > 0
+
+- name: "[{{ section_name }}] pip — into the default python env"
+  when: _sec_pip | length > 0
+  block:
+    - name: "[{{ section_name }}] pip needs the python section"
+      ansible.builtin.assert:
+        that: python_versions | length > 0
+        fail_msg: >-
+          section `{{ section_name }}` has pip packages, but python.versions is empty —
+          pip installs into the default python env, which the python section creates.
+
+    - name: "[{{ section_name }}] pip install"
+      become: true
+      become_user: "{{ device_user }}"
+      ansible.builtin.command:
+        cmd: >-
+          /home/{{ device_user }}/.local/bin/uv pip install
+          --python /home/{{ device_user }}/{{ python_venv }}/bin/python
+          {{ _sec_pip | join(' ') }}
+      register: _sec_pip
+      changed_when: "'Installed' in (_sec_pip.stdout + _sec_pip.stderr)"
+
+- name: "[{{ section_name }}] git"
+  ansible.builtin.include_tasks: git.yml
+  when: _sec_git | length > 0
+
+- name: "[{{ section_name }}] downloads"
+  ansible.builtin.include_tasks: downloads.yml
+  when: _sec_downloads | length > 0

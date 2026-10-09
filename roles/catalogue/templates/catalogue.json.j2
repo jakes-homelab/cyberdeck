@@ -1,15 +1,12 @@
-{
-  "git": [
-{% for r in git | default([]) %}
-    {"name": {{ r.name | to_json }}, "dest": {{ ((r.dest | default('~/src/' ~ r.name)) | regex_replace('^~', '/home/' ~ device_user)) | to_json }}, "url": {{ r.url | to_json }}, "entrypoint": {{ (r.entrypoint | default('')) | to_json }}, "description": {{ (r.description | default('')) | to_json }}}{% if not loop.last %},{% endif %}
-
-{% endfor %}
-  ],
-  "downloads": [
-{% for d in downloads | default([]) %}
-    {"name": {{ d.name | to_json }}, "url": {{ d.url | to_json }}, "sha256": {{ d.sha256 | to_json }}, "entrypoint": {{ (d.entrypoint | default('')) | to_json }}, "description": {{ (d.description | default('')) | to_json }}}{% if not loop.last %},{% endif %}
-
-{% endfor %}
-  ],
-  "apt": {{ (packages.apt | default([])) | to_json }}
-}
+{%- set ns = namespace(git=[], downloads=[], apt=[]) -%}
+{%- for sec in sections | default([]) -%}
+{%-   set s = lookup('vars', sec, default={}) or {} -%}
+{%-   for r in (s.get('git') or []) -%}
+{%-     set ns.git = ns.git + [{'name': r.name, 'section': sec, 'dest': (r.dest | default('~/src/' ~ r.name)) | regex_replace('^~', '/home/' ~ device_user), 'url': r.repo, 'entrypoint': r.entrypoint | default(''), 'description': r.description | default('')}] -%}
+{%-   endfor -%}
+{%-   for d in (s.get('downloads') or []) -%}
+{%-     set ns.downloads = ns.downloads + [{'name': d.name, 'section': sec, 'url': d.url, 'sha256': d.sha256, 'entrypoint': d.entrypoint | default(''), 'description': d.description | default('')}] -%}
+{%-   endfor -%}
+{%-   set ns.apt = ns.apt + (s.get('apt') or []) -%}
+{%- endfor -%}
+{{ {'git': ns.git, 'downloads': ns.downloads, 'apt': ns.apt | unique} | to_nice_json }}
